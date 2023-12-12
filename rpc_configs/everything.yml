@@ -1,0 +1,483 @@
+methods:
+  - method: author_submitExtrinsic
+    cache:
+      size: 0
+    params:
+      - name: extrinsic
+        ty: Bytes
+
+  - method: author_pendingExtrinsics
+    cache:
+      size: 1
+      ttl_seconds: 3
+
+  - method: chain_getBlockHash
+    params:
+      - name: blockNumber
+        ty: BlockNumber
+        optional: true
+        inject: true
+
+  - method: chain_getHeader
+    params:
+      - name: hash
+        ty: BlockHash
+        optional: true
+        inject: true
+
+  - method: chain_getBlock
+    params:
+      - name: hash
+        ty: BlockHash
+        optional: true
+        inject: true
+
+  - method: chain_getFinalizedHead
+    cache:
+      size: 1
+      ttl_seconds: 6
+      invalidate_at: OnNewFinalizedHead
+
+  - method: state_getRuntimeVersion
+    params:
+      - name: at
+        ty: BlockHash
+        optional: true
+        inject: true
+
+  - method: state_getMetadata
+    params:
+      - name: at
+        ty: BlockHash
+        optional: true
+        inject: true
+
+  - method: state_getStorage
+    params:
+      - name: key
+        ty: StorageKey
+      - name: at
+        ty: BlockHash
+        optional: true
+        inject: true
+
+  - method: state_getKeysPaged
+    params:
+      - name: key
+        ty: StorageKey
+      - name: count
+        ty: u32
+      - name: startKey
+        ty: StorageKey
+        optional: true
+      - name: at
+        ty: BlockHash
+        optional: true
+        inject: true
+
+  - method: state_queryStorageAt
+    params:
+      - name: keys
+        ty: 'Vec<StorageKey>'
+      - name: at
+        ty: BlockHash
+        optional: true
+        inject: true
+
+  - method: state_call
+    cache:
+      size: 200
+      ttl_seconds: 30
+    params:
+      - name: method
+        ty: String
+      - name: data
+        ty: Bytes
+      - name: at
+        ty: BlockHash
+        optional: true
+        inject: true
+
+  - method: childstate_getKeysPaged
+    params:
+      - name: childStorageKey
+        ty: StorageKey
+      - name: prefix
+        ty: StorageKey
+      - name: count
+        ty: u32
+      - name: startKey
+        ty: StorageKey
+        optional: true
+      - name: at
+        ty: BlockHash
+        optional: true
+        inject: true
+
+  - method: childstate_getStorage
+    params:
+      - name: childStorageKey
+        ty: StorageKey
+      - name: key
+        ty: StorageKey
+      - name: at
+        ty: BlockHash
+        optional: true
+        inject: true
+
+  - method: system_chain
+    cache:
+      size: 1
+
+  - method: system_properties
+    cache:
+      size: 1
+
+  - method: system_name
+    response: Subway
+
+  - method: system_version
+    response: 1.0.0-dev
+
+  - method: system_chainType
+    cache:
+      size: 1
+
+  - method: system_localPeerId
+    cache:
+      size: 1
+
+  - method: system_nodeRoles
+    response: [ 'Full' ]
+
+  - method: system_localListenAddresses
+    cache:
+      size: 1
+
+  - method: system_health
+    cache:
+      size: 1
+      ttl_seconds: 5
+
+  - method: system_dryRun
+    cache:
+      size: 200
+      ttl_seconds: 30
+    params:
+      - name: extrinsic
+        ty: Bytes
+      - name: at
+        ty: BlockHash
+        optional: true
+        inject: true
+
+  - method: system_accountNextIndex
+    cache:
+      size: 0
+    params:
+      - name: accountId
+        ty: AccountId
+
+  - method: eth_blockNumber
+    cache:
+      ttl_seconds: 1
+
+  - method: eth_chainId
+    cache:
+      size: 1
+
+  - method: eth_protocolVersion
+
+  - method: eth_syncing
+
+  - method: eth_coinbase
+
+  - method: eth_gasPrice
+
+  - method: eth_accounts
+
+  - method: net_version
+    cache:
+      size: 1
+
+  - method: net_runtimeVersion
+    cache:
+      size: 1
+
+  - method: net_health
+
+  - method: net_isSafeMode
+    cache:
+      size: 1
+
+  - method: net_indexer
+
+  - method: web3_clientVersion
+    cache:
+      size: 1
+
+  - method: eth_sign
+    params:
+      - name: address
+        ty: String
+      - name: message
+        ty: String
+
+  - method: eth_sendTransaction
+    cache:
+      size: 0
+    params:
+      - name: Transaction
+        ty: Bytes
+
+  - method: eth_sendRawTransaction
+    cache:
+      size: 0
+    params:
+      - name: transaction
+        ty: Bytes
+
+  - method: eth_call
+    cache:
+      ttl_seconds: 3
+    params:
+      - name: transaction
+        ty: Bytes
+
+  - method: eth_getTransactionCount
+    cache:
+      ttl_seconds: 3
+    params:
+      - name: address
+        ty: Bytes
+      - name: block
+        ty: BlockHash
+
+  - method: eth_getBlockByHash
+    params:
+      - name: BlockHash
+        ty: BlockHash
+      - name: FullTransactions
+        ty: Boolean
+
+  - method: eth_getBlockByNumber
+    params:
+      - name: blockTag
+        ty: BlockTag
+        inject: true
+      - name: fullTransactions
+        ty: Boolean
+
+  - method: eth_getBlockTransactionCountByHash
+    params:
+      - name: BlockHash
+        ty: BlockHash
+
+  - method: eth_getBlockTransactionCountByNumber
+    params:
+      - name: blockTag
+        ty: BlockTag
+        inject: true
+
+  - method: eth_getUncleCountByBlockHash
+    params:
+      - name: BlockHash
+        ty: BlockHash
+
+  - method: eth_getUncleCountByBlockNumber
+    params:
+      - name: blockTag
+        ty: BlockTag
+        inject: true
+
+  - method: eth_estimateGas
+    cache:
+      ttl_seconds: 3
+    params:
+      - name: transaction
+        ty: Bytes
+
+  - method: eth_feeHistory
+    params:
+      - name: blockCount
+        ty: Bytes
+      - name: newestBlock
+        ty: boolean
+      - name: rewardPercentiles
+        ty: Bytes
+
+  - method: eth_getUncleByBlockHashAndIndex
+    params:
+      - name: blockHash
+        ty: BlockHash
+      - name: hexNumber
+        ty: Bytes
+
+  - method: eth_getUncleByBlockNumberAndIndex
+    params:
+      - name: block
+        ty: BlockTag
+        inject: true
+      - name: hexNumber
+        ty: Bytes
+
+  - method: eth_isBlockFinalized
+    cache:
+      ttl_seconds: 3
+    params:
+      - name: block
+        ty: BlockTag
+        inject: true
+
+  - method: eth_isTransactionFinalized
+    cache:
+      ttl_seconds: 3
+    params:
+      - name: transactionHash
+        ty: Bytes
+
+  - method: eth_newFilter
+    cache:
+      size: 0
+    params:
+      - name: Filter
+        ty: Bytes
+
+  - method: eth_newBlockFilter
+    cache:
+      size: 0
+
+  - method: eth_newPendingTransactionFilter
+    cache:
+      size: 0
+
+  - method: eth_getFilterChanges
+    cache:
+      size: 0
+    params:
+      - name: address
+        ty: Bytes
+
+  - method: eth_getFilterLogs
+    cache:
+      size: 0
+    params:
+      - name: address
+        ty: Bytes
+
+  - method: eth_uninstallFilter
+    cache:
+      size: 0
+    params:
+      - name: FilterIdentifier
+        ty: Bytes
+
+  - method: eth_getLogs
+    cache:
+      size: 0
+    params:
+      - name: Filter
+        ty: Bytes
+
+  - method: eth_getBalance
+    params:
+      - name: Address
+        ty: Bytes
+      - name: Block
+        ty: BlockTag
+        inject: true
+
+  - method: eth_getStorageAt
+    params:
+      - name: address
+        ty: Bytes
+      - name: position
+        ty: Bytes
+      - name: block
+        ty: BlockTag
+        inject: true
+
+  - method: eth_getCode
+    params:
+      - name: Address
+        ty: Bytes
+      - name: Block
+        ty: BlockTag
+        inject: true
+
+  - method: eth_getTransactionByHash
+    params:
+      - name: transactionHash
+        ty: Bytes
+
+  - method: eth_getTransactionByBlockHashAndIndex
+    params:
+      - name: BlockHash
+        ty: BlockHash
+      - name: TransactionIndex
+        ty: Bytes
+
+  - method: eth_getTransactionByBlockNumberAndIndex
+    params:
+      - name: blockTag
+        ty: BlockTag
+        inject: true
+      - name: transactionIndex
+        ty: HexNumber
+
+  - method: eth_getEthGas
+    params:
+      - name: substrateGasParams
+        ty: Bytes
+
+  - method: eth_getEthResources
+    params:
+      - name: transaction
+        ty: Bytes
+
+  - method: eth_getTransactionReceipt
+    params:
+      - name: txHash
+        ty: Bytes
+
+subscriptions:
+  - subscribe: eth_subscribe
+    unsubscribe: eth_unsubscribe
+    name: eth_subscription
+
+  - subscribe: author_submitAndWatchExtrinsic
+    unsubscribe: author_unwatchExtrinsic
+    name: author_extrinsicUpdate
+
+  - subscribe: chain_subscribeNewHeads
+    unsubscribe: chain_unsubscribeNewHeads
+    name: chain_newHead
+    merge_strategy: replace
+
+  - subscribe: chain_subscribeFinalizedHeads
+    unsubscribe: chain_unsubscribeFinalizedHeads
+    name: chain_finalizedHead
+    merge_strategy: replace
+
+  - subscribe: chain_subscribeAllHeads
+    unsubscribe: chain_unsubscribeAllHeads
+    name: chain_allHead
+    merge_strategy: replace
+
+  - subscribe: state_subscribeRuntimeVersion
+    unsubscribe: state_unsubscribeRuntimeVersion
+    name: state_runtimeVersion
+    merge_strategy: replace
+
+  - subscribe: state_subscribeStorage
+    unsubscribe: state_unsubscribeStorage
+    name: state_storage
+    merge_strategy: merge_storage_changes
+
+aliases:
+  - [ chain_subscribeNewHeads, chain_subscribeNewHead ]
+  - [ chain_unsubscribeNewHeads, chain_unsubscribeNewHead ]
+  - [ chain_getBlockHash, chain_getHead ]
+  - [ state_getKeysPaged, state_getKeysPagedAt ]
+  - [ state_getStorage, state_getStorageAt ]
+  - [ childstate_getKeysPaged, childstate_getKeysPagedAt ]
