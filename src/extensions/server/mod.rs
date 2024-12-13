@@ -221,7 +221,8 @@ impl SubwayServerBuilder {
 
                     let mut socket_ip = remote_addr.ip().to_string();
                     if let Some(true) = rate_limit_builder.as_ref().map(|r| r.use_xff()) {
-                        socket_ip = req.xxf_ip().unwrap_or(socket_ip);
+                        let header = rate_limit_builder.as_ref().unwrap().xff_header();
+                        socket_ip = req.xxf_ip(header).unwrap_or(socket_ip);
                     }
 
                     let call_metrics = rpc_metrics.call_metrics();

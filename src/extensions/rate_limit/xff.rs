@@ -2,11 +2,11 @@ use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 
 pub trait XFF {
-    fn xxf_ip(&self) -> Option<String>;
+    fn xxf_ip(&self, header: &str) -> Option<String>;
 }
 impl<T> XFF for http::Request<T> {
-    fn xxf_ip(&self) -> Option<String> {
-        let xff = self.headers().get("x-forwarded-for")?;
+    fn xxf_ip(&self, header: &str) -> Option<String> {
+        let xff = self.headers().get(header)?;
         let xff = xff.to_str().ok()?;
         let xff = xff.split(',').next()?;
         let addr = IpAddr::from_str(xff)
@@ -37,9 +37,9 @@ fn test_xff() {
 
     for (xff, ip) in cases {
         let req = http::Request::builder()
-            .header("X-Forwarded-For", xff)
+            .header("XFF-header", xff)
             .body(())
             .unwrap();
-        assert_eq!(req.xxf_ip().as_deref(), ip);
+        assert_eq!(req.xxf_ip("xff-HEADER").as_deref(), ip);
     }
 }

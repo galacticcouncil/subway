@@ -21,6 +21,8 @@ pub struct RateLimitConfig {
     pub connection: Option<Rule>,
     #[serde(default)]
     pub use_xff: bool,
+    #[serde(default = "default_xff_header")]
+    pub xff_header: String,
 }
 
 #[derive(Deserialize, Debug, Clone, Default)]
@@ -43,6 +45,10 @@ fn default_period_secs() -> u64 {
 
 fn default_jitter_up_to_millis() -> u64 {
     100
+}
+
+fn default_xff_header() -> String {
+    "x-forwarded-for".to_string()
 }
 
 pub struct RateLimitBuilder {
@@ -115,6 +121,10 @@ impl RateLimitBuilder {
     // whether to use the X-Forwarded-For header to get the remote ip
     pub fn use_xff(&self) -> bool {
         self.config.use_xff
+    }
+
+    pub fn xff_header(&self) -> &str {
+        &self.config.xff_header
     }
 }
 

@@ -33,6 +33,7 @@ extensions:
     # use X-Forwarded-For header to get real ip, if available (e.g. behind a load balancer).
     # WARNING: Use with caution, as this xff header can be forged.
     use_xff: true # default is false
+    xff_header: ${XFF_HEADER:-x-forwarded-for}
   prometheus:
     port: 9616
     listen_address: "0.0.0.0"
