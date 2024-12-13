@@ -9,10 +9,11 @@ use std::{
 use anyhow::anyhow;
 use async_trait::async_trait;
 use futures::TryFutureExt;
+use garde::Validate;
 use jsonrpsee::{
     core::{
-        client::{ClientT, Subscription, SubscriptionClientT},
-        Error, JsonValue,
+        client::{ClientT, Error, Subscription, SubscriptionClientT},
+        JsonValue,
     },
     ws_client::{WsClient, WsClientBuilder},
 };
@@ -36,6 +37,7 @@ mod tests;
 const TRACER: utils::telemetry::Tracer = utils::telemetry::Tracer::new("client");
 
 pub struct Client {
+    endpoints: Vec<String>,
     sender: tokio::sync::mpsc::Sender<Message>,
     rotation_notify: Arc<Notify>,
     retries: u32,
@@ -48,11 +50,61 @@ impl Drop for Client {
     }
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Validate, Debug)]
+#[garde(allow_unvalidated)]
 pub struct ClientConfig {
+    #[garde(inner(custom(validate_endpoint)))]
     pub endpoints: Vec<String>,
     #[serde(default = "bool_true")]
     pub shuffle_endpoints: bool,
+}
+
+fn validate_endpoint(endpoint: &str, _context: &()) -> garde::Result {
+    endpoint
+        .parse::<jsonrpsee::client_transport::ws::Uri>()
+        .map_err(|_| garde::Error::new(format!("Invalid endpoint format: {}", endpoint)))?;
+
+    Ok(())
+}
+
+impl ClientConfig {
+    pub async fn all_endpoints_can_be_connected(&self) -> bool {
+        let join_handles: Vec<_> = self
+            .endpoints
+            .iter()
+            .map(|endpoint| {
+                let endpoint = endpoint.clone();
+                tokio::spawn(async move {
+                    match check_endpoint_connection(&endpoint).await {
+                        Ok(_) => {
+                            tracing::info!("Connected to endpoint: {endpoint}");
+                            true
+                        }
+                        Err(err) => {
+                            tracing::error!("Failed to connect to endpoint: {endpoint}, error: {err:?}",);
+                            false
+                        }
+                    }
+                })
+            })
+            .collect();
+        let mut ok_all = true;
+        for join_handle in join_handles {
+            let ok = join_handle.await.unwrap_or_else(|e| {
+                tracing::error!("Failed to join: {e:?}");
+                false
+            });
+            if !ok {
+                ok_all = false
+            }
+        }
+        ok_all
+    }
+}
+// simple connection check with default client params and no retries
+async fn check_endpoint_connection(endpoint: &str) -> Result<(), anyhow::Error> {
+    let _ = WsClientBuilder::default().build(&endpoint).await?;
+    Ok(())
 }
 
 pub fn bool_true() -> bool {
@@ -113,6 +165,7 @@ impl Client {
 
         let rotation_notify = Arc::new(Notify::new());
         let rotation_notify_bg = rotation_notify.clone();
+        let endpoints_ = endpoints.clone();
 
         let background_task = tokio::spawn(async move {
             let connect_backoff_counter = Arc::new(AtomicU32::new(0));
@@ -197,10 +250,7 @@ impl Client {
                                     Err(err) => {
                                         tracing::debug!("Request failed: {:?}", err);
                                         match err {
-                                            Error::RequestTimeout
-                                            | Error::Transport(_)
-                                            | Error::RestartNeeded(_)
-                                            | Error::MaxSlotsExceeded => {
+                                            Error::RequestTimeout | Error::Transport(_) | Error::RestartNeeded(_) => {
                                                 tokio::time::sleep(get_backoff_time(&request_backoff_counter)).await;
 
                                                 // make sure it's still connected
@@ -276,10 +326,7 @@ impl Client {
                                     Err(err) => {
                                         tracing::debug!("Subscribe failed: {:?}", err);
                                         match err {
-                                            Error::RequestTimeout
-                                            | Error::Transport(_)
-                                            | Error::RestartNeeded(_)
-                                            | Error::MaxSlotsExceeded => {
+                                            Error::RequestTimeout | Error::Transport(_) | Error::RestartNeeded(_) => {
                                                 tokio::time::sleep(get_backoff_time(&request_backoff_counter)).await;
 
                                                 // make sure it's still connected
@@ -367,6 +414,7 @@ impl Client {
         }
 
         Ok(Self {
+            endpoints: endpoints_,
             sender: message_tx,
             rotation_notify,
             retries: retries.unwrap_or(3),
@@ -376,6 +424,10 @@ impl Client {
 
     pub fn with_endpoints(endpoints: impl IntoIterator<Item = impl AsRef<str>>) -> Result<Self, anyhow::Error> {
         Self::new(endpoints, None, None, None)
+    }
+
+    pub fn endpoints(&self) -> &Vec<String> {
+        &self.endpoints
     }
 
     pub async fn request(&self, method: &str, params: Vec<JsonValue>) -> CallResult {

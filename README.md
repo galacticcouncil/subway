@@ -10,9 +10,9 @@ This is a generalized JSON RPC proxy server with features specifically designed 
 
 Pull vendors: `git submodule update --init --recursive`
 
-Quick start: `cargo run -- --config config.yml`
+Quick start: `cargo run -- --config configs/config.yml`
 
-This will run a proxy server with [config.yml](config.yml) as the configuration file.
+This will run a proxy server with [config.yml](configs/config.yml) as the configuration file.
 
 Run with `RUSTFLAGS="--cfg tokio_unstable"` to enable [tokio-console](https://github.com/tokio-rs/console)
 
@@ -20,11 +20,15 @@ Run with `RUSTFLAGS="--cfg tokio_unstable"` to enable [tokio-console](https://gi
 
 - `RUST_LOG`
   - Log level. Default: `info`.
-- `PORT`
-  - Override port configuration in config file.
 - `LOG_FORMAT`
   - Log format. Default: `full`.
   - Options: `full`, `pretty`, `json`, `compact`
+
+In addition, you can refer env variables in `config.yml` by using following syntax:
+
+- `${variable}`
+- `${variable:-word}` indicates that if variable is set then the result will be that value. If variable is not set then word will be the result.
+- `${variable:+word}` indicates that if variable is set then word will be the result, otherwise the result is the empty string.
 
 ## Features
 
@@ -46,8 +50,8 @@ Subway is build with middleware pattern.
   - Inject optional `defaultBlock` parameter to requests to ensure downstream middleware such as cache can work properly.
 - Subscription
   - Forward requests to upstream servers.
-  - TODO: Merge duplicated subscriptions.
-- TODO: Rate Limit
+  - Merge duplicated subscriptions.
+- Rate Limit
   - Rate limit requests from downstream middleware.
 - TODO: Parameter filter
   - Deny requests with invalid parameters.
@@ -62,7 +66,7 @@ Subway is build with middleware pattern.
   - TODO: Limit batch size, request size and response size.
 - TODO: Metrics
   - Getting insights of the RPC calls and server performance.
-  
+
 ## Benchmarks
 
 To run all benchmarks:
@@ -75,4 +79,30 @@ It's also possible to run individual benchmarks by:
 
 ```
 cargo bench --bench bench ws_round_trip
+```
+
+## Validate Middleware
+
+This middleware will intercept all method request/responses and compare the result directly with healthy endpoint responses.
+This is useful for debugging to make sure the returned values are as expected.
+You can enable validate middleware on your config file.
+
+```yml
+middlewares:
+  methods:
+    - validate
+```
+
+NOTE: Keep in mind that if you place `validate` middleware before `inject_params` you may get false positive errors because the request will not be the same.
+
+Ignored methods can be defined in extension config:
+
+```yml
+extensions:
+  validator:
+    ignore_methods:
+      - system_health
+      - system_name
+      - system_version
+      - author_pendingExtrinsics
 ```

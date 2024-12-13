@@ -13,9 +13,11 @@ pub mod cache;
 pub mod client;
 pub mod event_bus;
 pub mod merge_subscription;
+pub mod prometheus;
 pub mod rate_limit;
 pub mod server;
 pub mod telemetry;
+pub mod validator;
 
 #[async_trait]
 pub trait Extension: Sized {
@@ -71,13 +73,15 @@ impl ExtensionRegistry {
 macro_rules! define_all_extensions {
     (
         $(
-            $ext_name:ident: $ext_type:ty
+            $(#[$attr:meta])* $ext_name:ident: $ext_type:ty
         ),* $(,)?
     ) => {
-        #[derive(Deserialize, Debug, Default)]
+        use garde::Validate;
+        #[derive(Deserialize, Debug, Validate, Default)]
+        #[garde(allow_unvalidated)]
         pub struct ExtensionsConfig {
             $(
-                #[serde(default)]
+                $(#[$attr])*
                 pub $ext_name: Option<<$ext_type as Extension>::Config>,
             )*
         }
@@ -131,6 +135,7 @@ macro_rules! define_all_extensions {
 define_all_extensions! {
     telemetry: telemetry::Telemetry,
     cache: cache::Cache,
+    #[garde(dive)]
     client: client::Client,
     merge_subscription: merge_subscription::MergeSubscription,
     substrate_api: api::SubstrateApi,
@@ -138,4 +143,6 @@ define_all_extensions! {
     server: server::SubwayServerBuilder,
     event_bus: event_bus::EventBus,
     rate_limit: rate_limit::RateLimitBuilder,
+    prometheus: prometheus::Prometheus,
+    validator: validator::Validator,
 }

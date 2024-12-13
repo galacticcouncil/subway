@@ -4,6 +4,7 @@ use futures::FutureExt;
 use jsonrpsee::{
     core::JsonValue,
     server::{RpcModule, ServerHandle},
+    types::error::INTERNAL_ERROR_CODE,
     types::ErrorObjectOwned,
 };
 use opentelemetry::trace::FutureExt as _;
@@ -12,6 +13,7 @@ use serde_json::json;
 use crate::{
     config::Config,
     extensions::{
+        prometheus::get_rpc_metrics,
         rate_limit::{MethodWeights, RateLimitBuilder},
         server::SubwayServerBuilder,
     },
@@ -51,9 +53,11 @@ pub async fn build(config: Config) -> anyhow::Result<SubwayServerHandle> {
 
     let request_timeout_seconds = server_builder.config.request_timeout_seconds;
 
+    let metrics = get_rpc_metrics(&extensions_registry).await;
+
     let registry = extensions_registry.clone();
     let (addr, handle) = server_builder
-        .build(rate_limit_builder, rpc_method_weights, move || async move {
+        .build(rate_limit_builder, rpc_method_weights, metrics, move || async move {
             let mut module = RpcModule::new(());
 
             let tracer = telemetry::Tracer::new("server");
@@ -77,7 +81,7 @@ pub async fn build(config: Config) -> anyhow::Result<SubwayServerHandle> {
 
                 let method_name = string_to_static_str(method.method.clone());
 
-                module.register_async_method(method_name, move |params, _| {
+                module.register_async_method(method_name, move |params, _, _| {
                     let method_middlewares = method_middlewares.clone();
                     async move {
                         let parsed = params.parse::<JsonValue>()?;
@@ -96,16 +100,23 @@ pub async fn build(config: Config) -> anyhow::Result<SubwayServerHandle> {
 
                         let result = result_rx
                             .await
-                            .map_err(|_| errors::map_error(jsonrpsee::core::Error::RequestTimeout))?;
+                            .map_err(|_| errors::map_error(jsonrpsee::core::client::Error::RequestTimeout));
 
                         match result.as_ref() {
-                            Ok(_) => tracer.span_ok(),
+                            Ok(Ok(_)) => tracer.span_ok(),
+                            Ok(Err(err)) => {
+                                if err.code() == INTERNAL_ERROR_CODE {
+                                    tracer.span_error(err)
+                                } else {
+                                    tracer.span_ok()
+                                }
+                            }
                             Err(err) => {
                                 tracer.span_error(err);
                             }
                         };
 
-                        result
+                        result?
                     }
                     .with_context(tracer.context(method_name))
                 })?;
@@ -136,7 +147,7 @@ pub async fn build(config: Config) -> anyhow::Result<SubwayServerHandle> {
                     subscribe_name,
                     name,
                     unsubscribe_name,
-                    move |params, pending_sink, _| {
+                    move |params, pending_sink, _, _| {
                         let subscription_middlewares = subscription_middlewares.clone();
                         async move {
                             let parsed = params.parse::<JsonValue>()?;
@@ -164,7 +175,7 @@ pub async fn build(config: Config) -> anyhow::Result<SubwayServerHandle> {
 
                             let result = result_rx
                                 .await
-                                .map_err(|_| errors::map_error(jsonrpsee::core::Error::RequestTimeout))?;
+                                .map_err(|_| errors::map_error(jsonrpsee::core::client::Error::RequestTimeout))?;
 
                             match result.as_ref() {
                                 Ok(_) => {
@@ -193,7 +204,7 @@ pub async fn build(config: Config) -> anyhow::Result<SubwayServerHandle> {
 
             rpc_methods.sort();
 
-            module.register_method("rpc_methods", move |_, _| {
+            module.register_method("rpc_methods", move |_, _, _| {
                 Ok::<JsonValue, ErrorObjectOwned>(json!({
                     "version": 1,
                     "methods": rpc_methods
@@ -214,10 +225,9 @@ pub async fn build(config: Config) -> anyhow::Result<SubwayServerHandle> {
 #[cfg(test)]
 mod tests {
     use jsonrpsee::{
-        core::client::ClientT,
+        core::{client::ClientT, params::BatchRequestBuilder},
         rpc_params,
-        server::ServerBuilder,
-        server::ServerHandle,
+        server::{ServerBuilder, ServerHandle},
         ws_client::{WsClient, WsClientBuilder},
         RpcModule,
     };
@@ -233,7 +243,12 @@ mod tests {
     const PHO: &str = "call_pho";
     const BAR: &str = "bar";
 
-    async fn subway_server(endpoint: String, port: u16, request_timeout_seconds: Option<u64>) -> SubwayServerHandle {
+    async fn subway_server(
+        endpoint: String,
+        port: u16,
+        request_timeout_seconds: Option<u64>,
+        max_batch_size: Option<u32>,
+    ) -> SubwayServerHandle {
         let config = Config {
             extensions: ExtensionsConfig {
                 client: Some(ClientConfig {
@@ -244,6 +259,8 @@ mod tests {
                     listen_address: "127.0.0.1".to_string(),
                     port,
                     max_connections: 1024,
+                    max_subscriptions_per_connection: 1024,
+                    max_batch_size,
                     request_timeout_seconds: request_timeout_seconds.unwrap_or(10),
                     http_methods: Vec::new(),
                     cors: None,
@@ -299,10 +316,10 @@ mod tests {
 
         let mut module = RpcModule::new(());
         module
-            .register_method(PHO, |_, _| Ok::<String, ErrorObjectOwned>(BAR.to_string()))
+            .register_method(PHO, |_, _, _| Ok::<String, ErrorObjectOwned>(BAR.to_string()))
             .unwrap();
         module
-            .register_async_method(TIMEOUT, |_, _| async {
+            .register_async_method(TIMEOUT, |_, _, _| async {
                 loop {
                     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
                 }
@@ -326,7 +343,7 @@ mod tests {
     #[tokio::test]
     async fn null_param_works() {
         let (endpoint, upstream_dummy_server_handle) = upstream_dummy_server("127.0.0.1:9955").await;
-        let subway_server = subway_server(endpoint, 9944, None).await;
+        let subway_server = subway_server(endpoint, 9944, None, None).await;
         let url = format!("ws://{}", subway_server.addr);
         let client = ws_client(&url).await;
         assert_eq!(BAR, client.request::<String, _>(PHO, rpc_params!()).await.unwrap());
@@ -338,7 +355,7 @@ mod tests {
     async fn request_timeout() {
         let (endpoint, upstream_dummy_server_handle) = upstream_dummy_server("127.0.0.1:9956").await;
         // server with 1 second timeout
-        let subway_server = subway_server(endpoint, 9945, Some(1)).await;
+        let subway_server = subway_server(endpoint, 9945, Some(1), None).await;
         let url = format!("ws://{}", subway_server.addr);
         // client with default 60 second timeout
         let client = ws_client(&url).await;
@@ -362,6 +379,84 @@ mod tests {
         }
 
         subway_server.handle.stop().unwrap();
+        upstream_dummy_server_handle.stop().unwrap();
+    }
+
+    #[tokio::test]
+    async fn batch_requests_works() {
+        let (endpoint, upstream_dummy_server_handle) = upstream_dummy_server("127.0.0.1:9957").await;
+
+        // Server with max batch size 3
+        let subway_server = subway_server(endpoint, 9946, None, Some(3)).await;
+        let url = format!("ws://{}", subway_server.addr);
+        let client = ws_client(&url).await;
+
+        // Sending 3 request in a batch
+        let mut batch = BatchRequestBuilder::new();
+        batch.insert(PHO, rpc_params!()).unwrap();
+        batch.insert(PHO, rpc_params!()).unwrap();
+        batch.insert(PHO, rpc_params!()).unwrap();
+
+        let res = client.batch_request::<String>(batch).await.unwrap();
+        assert_eq!(res.num_successful_calls(), 3);
+
+        upstream_dummy_server_handle.stop().unwrap();
+    }
+
+    #[tokio::test]
+    async fn batch_requests_exceeds_max_size_errors() {
+        let (endpoint, upstream_dummy_server_handle) = upstream_dummy_server("127.0.0.1:9958").await;
+
+        // Server with max batch size 3
+        let subway_server = subway_server(endpoint, 9947, None, Some(3)).await;
+        let url = format!("ws://{}", subway_server.addr);
+        let client = ws_client(&url).await;
+
+        // Sending 4 request in a batch
+        let mut batch = BatchRequestBuilder::new();
+        batch.insert(PHO, rpc_params!()).unwrap();
+        batch.insert(PHO, rpc_params!()).unwrap();
+        batch.insert(PHO, rpc_params!()).unwrap();
+        batch.insert(PHO, rpc_params!()).unwrap();
+
+        // Due to the limitation of jsonrpsee client implementation,
+        // we can't check the error message when response batch id is `null`.
+        // E.g.
+        // Raw response - `{"jsonrpc":"2.0","error":{"code":-32010,"message":"The batch request was too large","data":"Exceeded max limit of 3"},"id":null}`
+        // Jsonrpsee client response - `Err(RestartNeeded(InvalidRequestId(NotPendingRequest("null"))))`
+        //
+        // Checking if error is returned for now.
+        let res = client.batch_request::<String>(batch).await;
+
+        assert!(res.is_err());
+
+        upstream_dummy_server_handle.stop().unwrap();
+    }
+
+    #[tokio::test]
+    async fn batch_requests_disabled_errors() {
+        let (endpoint, upstream_dummy_server_handle) = upstream_dummy_server("127.0.0.1:9959").await;
+
+        // Server with max batch size 0 (disabled)
+        let subway_server = subway_server(endpoint, 9948, None, Some(0)).await;
+        let url = format!("ws://{}", subway_server.addr);
+        let client = ws_client(&url).await;
+
+        // Sending 1 request in a batch
+        let mut batch = BatchRequestBuilder::new();
+        batch.insert(PHO, rpc_params!()).unwrap();
+
+        // Due to the limitation of jsonrpsee client implementation,
+        // we can't check the error message when response batch id is `null`.
+        // E.g.
+        // Raw response - `{"jsonrpc":"2.0","error":{"code":-32005,"message":"Batched requests are not supported by this server"},"id":null}`
+        // Jsonrpsee client response - `Err(RestartNeeded(InvalidRequestId(NotPendingRequest("null"))))`
+        //
+        // Checking if error is returned for now.
+        let res = client.batch_request::<String>(batch).await;
+
+        assert!(res.is_err());
+
         upstream_dummy_server_handle.stop().unwrap();
     }
 }
