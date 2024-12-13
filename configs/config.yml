@@ -1,22 +1,22 @@
 extensions:
   client:
     endpoints:
-      - wss://rpc.hydradx.cloud
+      - ${RPC:-wss://rpc.hydradx.cloud}
   event_bus:
   substrate_api:
     stale_timeout_seconds: 180
   telemetry:
     provider: none
   cache:
-    default_ttl_seconds: 60
-    default_size: 500
+    default_ttl_seconds: ${CACHE_TTL_SECONDS:-60}
+    default_size: ${CACHE_SIZE:-5000}
   merge_subscription:
-    keep_alive_seconds: 60
+    keep_alive_seconds: ${MERGE_SUBSCRIPTION_KEEP_ALIVE_SECONDS:-60}
   server:
     port: 9944
     listen_address: '0.0.0.0'
-    max_connections: 2000
-    max_batch_size: 10
+    max_connections: ${MAX_CONNECTIONS:-2000}
+    max_batch_size: ${MAX_BATCH_SIZE:-10}
     http_methods:
       - path: /health
         method: system_health
@@ -25,18 +25,18 @@ extensions:
     cors: all
   rate_limit:
     connection:
-      burst: 100
-      period_secs: 1
+      burst: ${RATE_LIMIT_CONNECTION_BURST:-100}
+      period_secs: ${RATE_LIMIT_CONNECTION_PERIOD_SECS:-1}
     ip:
-      burst: 500
-      period_secs: 10
+      burst: ${RATE_LIMIT_IP_BURST:-500}
+      period_secs: ${RATE_LIMIT_IP_PERIOD_SECS:-10}
     # use X-Forwarded-For header to get real ip, if available (e.g. behind a load balancer).
     # WARNING: Use with caution, as this xff header can be forged.
     use_xff: true # default is false
   prometheus:
     port: 9616
     listen_address: "0.0.0.0"
-    label: "dev"
+    label: ${PROMETHEUS_LABEL:-subway}
 
 middlewares:
   methods:
