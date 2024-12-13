@@ -26,6 +26,8 @@ RUN ldd /usr/local/bin/subway && \
 RUN rm -rf /usr/lib/python* && \
 	rm -rf /usr/sbin /usr/share/man
 
+COPY --from=builder /app/configs /app/configs
+
 USER docker
 EXPOSE 9944
 
