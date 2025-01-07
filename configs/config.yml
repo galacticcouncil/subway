@@ -9,7 +9,7 @@ extensions:
     provider: none
   cache:
     default_ttl_seconds: ${CACHE_TTL_SECONDS:-60}
-    default_size: ${CACHE_SIZE:-5000}
+    default_size: ${CACHE_SIZE:-50000}
   merge_subscription:
     keep_alive_seconds: ${MERGE_SUBSCRIPTION_KEEP_ALIVE_SECONDS:-60}
   server:
@@ -25,10 +25,10 @@ extensions:
     cors: all
   rate_limit:
     connection:
-      burst: ${RATE_LIMIT_CONNECTION_BURST:-100}
+      burst: ${RATE_LIMIT_CONNECTION_BURST:-400}
       period_secs: ${RATE_LIMIT_CONNECTION_PERIOD_SECS:-1}
     ip:
-      burst: ${RATE_LIMIT_IP_BURST:-500}
+      burst: ${RATE_LIMIT_IP_BURST:-2000}
       period_secs: ${RATE_LIMIT_IP_PERIOD_SECS:-10}
     # use X-Forwarded-For header to get real ip, if available (e.g. behind a load balancer).
     # WARNING: Use with caution, as this xff header can be forged.
