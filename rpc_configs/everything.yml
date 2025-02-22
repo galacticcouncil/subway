@@ -178,6 +178,92 @@ methods:
       - name: accountId
         ty: AccountId
 
+  - method: chainHead_v1_follow
+    cache:
+      size: 0
+    params:
+      - name: withRuntime
+        ty: Boolean
+
+  - method: chainHead_v1_unfollow
+    cache:
+      size: 0
+    params:
+      - name: followSubscription
+        ty: String
+
+  - method: chainHead_v1_unpin
+    cache:
+      size: 0
+    params:
+      - name: followSubscription
+        ty: String
+      - name: hashOrHashes
+        ty: String
+
+  - method: chainHead_v1_body
+    cache:
+      size: 0
+    params:
+      - name: followSubscription
+        ty: String
+      - name: hash
+        ty: String
+
+  - method: chainHead_v1_header
+    cache:
+      size: 0
+    params:
+      - name: followSubscription
+        ty: String
+      - name: hash
+        ty: String
+
+  - method: chainHead_v1_call
+    cache:
+      size: 0
+    params:
+      - name: followSubscription
+        ty: String
+      - name: hash
+        ty: String
+      - name: function
+        ty: String
+      - name: callParameters
+        ty: String
+
+  - method: chainHead_v1_storage
+    cache:
+      size: 0
+    params:
+      - name: followSubscription
+        ty: String
+      - name: hash
+        ty: String
+      - name: items
+        ty: 'Vec<String>'
+      - name: childTrie
+        ty: String
+        optional: true
+
+  - method: chainHead_v1_continue
+    cache:
+      size: 0
+    params:
+      - name: followSubscription
+        ty: String
+      - name: operationId
+        ty: String
+
+  - method: chainHead_v1_stopOperation
+    cache:
+      size: 0
+    params:
+      - name: followSubscription
+        ty: String
+      - name: operationId
+        ty: String
+
   - method: eth_blockNumber
     cache:
       ttl_seconds: 1
