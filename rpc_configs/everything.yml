@@ -264,6 +264,87 @@ methods:
       - name: operationId
         ty: String
 
+  - method: ismp_queryChallengePeriod
+    cache:
+      size: 0
+    params:
+      - name: clientId
+        ty: 'StateMachineId'
+
+  - method: ismp_queryChildTrieProof
+    cache:
+      size: 0
+    params:
+      - name: height
+        ty: u32
+      - name: keys
+        ty: 'Vec<String>'
+
+  - method: ismp_queryConsensusState
+    cache:
+      size: 0
+    params:
+      - name: height
+        ty: u32
+        optional: true
+      - name: clientId
+        ty: 'ConsensusClientId'
+
+  - method: ismp_queryEvents
+    cache:
+      size: 0
+    params:
+      - name: from
+        ty: 'BlockNumberOrHash'
+      - name: to
+        ty: 'BlockNumberOrHash'
+
+  - method: ismp_queryEventsWithMetadata
+    cache:
+      size: 0
+    params:
+      - name: from
+        ty: 'BlockNumberOrHash'
+      - name: to
+        ty: 'BlockNumberOrHash'
+
+  - method: ismp_queryRequests
+    cache:
+      size: 0
+    params:
+      - name: query
+        ty: 'Vec<LeafIndexQuery>'
+
+  - method: ismp_queryResponses
+    cache:
+      size: 0
+    params:
+      - name: query
+        ty: 'Vec<LeafIndexQuery>'
+
+  - method: ismp_queryStateMachineLatestHeight
+    cache:
+      size: 0
+    params:
+      - name: id
+        ty: 'StateMachineId'
+
+  - method: ismp_queryStateMachineUpdateTime
+    cache:
+      size: 0
+    params:
+      - name: height
+        ty: 'StateMachineHeight'
+
+  - method: ismp_queryStateProof
+    cache:
+      size: 0
+    params:
+      - name: height
+        ty: u32
+      - name: keys
+        ty: 'Vec<String>'
+
   - method: eth_blockNumber
     cache:
       ttl_seconds: 1
