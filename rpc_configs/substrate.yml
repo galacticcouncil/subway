@@ -285,7 +285,8 @@ methods:
       size: 0
     params:
       - name: height
-        ty: 'Option<u32>'
+        ty: u32
+        optional: true
       - name: clientId
         ty: 'ConsensusClientId'
 
