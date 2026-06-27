@@ -84,6 +84,20 @@ methods:
         optional: true
         inject: true
 
+  - method: state_getReadProof
+    # deterministic by (keys, block hash): merkle proof at a fixed hash is immutable.
+    # mirrors state_getStorage at-injection (head BlockHash) so correctness matches.
+    # proofs are larger than single values, so keep the cache small.
+    cache:
+      size: 200
+    params:
+      - name: keys
+        ty: 'Vec<StorageKey>'
+      - name: at
+        ty: BlockHash
+        optional: true
+        inject: true
+
   - method: state_call
     cache:
       size: 200
