@@ -264,20 +264,23 @@ impl Client {
                                                     return;
                                                 }
 
-                                                if matches!(err, Error::RequestTimeout) {
-                                                    tx.send(Message::RotateEndpoint)
-                                                        .await
-                                                        .expect("Failed to send rotate message");
+                                                if matches!(err, Error::RequestTimeout)
+                                                    && tx.send(Message::RotateEndpoint).await.is_err()
+                                                {
+                                                    // background task is gone, client has been dropped
+                                                    return;
                                                 }
 
-                                                tx.send(Message::Request {
-                                                    method,
-                                                    params,
-                                                    response,
-                                                    retries,
-                                                })
-                                                .await
-                                                .expect("Failed to send request message");
+                                                // background task may be gone (client dropped); nothing to
+                                                // do about it, this retry attempt is simply abandoned
+                                                let _ = tx
+                                                    .send(Message::Request {
+                                                        method,
+                                                        params,
+                                                        response,
+                                                        retries,
+                                                    })
+                                                    .await;
                                             }
                                             err => {
                                                 // make sure it's still connected
@@ -340,21 +343,24 @@ impl Client {
                                                     return;
                                                 }
 
-                                                if matches!(err, Error::RequestTimeout) {
-                                                    tx.send(Message::RotateEndpoint)
-                                                        .await
-                                                        .expect("Failed to send rotate message");
+                                                if matches!(err, Error::RequestTimeout)
+                                                    && tx.send(Message::RotateEndpoint).await.is_err()
+                                                {
+                                                    // background task is gone, client has been dropped
+                                                    return;
                                                 }
 
-                                                tx.send(Message::Subscribe {
-                                                    subscribe,
-                                                    params,
-                                                    unsubscribe,
-                                                    response,
-                                                    retries,
-                                                })
-                                                .await
-                                                .expect("Failed to send subscribe message")
+                                                // background task may be gone (client dropped); nothing to
+                                                // do about it, this retry attempt is simply abandoned
+                                                let _ = tx
+                                                    .send(Message::Subscribe {
+                                                        subscribe,
+                                                        params,
+                                                        unsubscribe,
+                                                        response,
+                                                        retries,
+                                                    })
+                                                    .await;
                                             }
                                             err => {
                                                 // make sure it's still connected
@@ -475,10 +481,8 @@ impl Client {
     }
 
     pub async fn rotate_endpoint(&self) {
-        self.sender
-            .send(Message::RotateEndpoint)
-            .await
-            .expect("Failed to rotate endpoint");
+        // if the background task is gone the client is being torn down anyway
+        let _ = self.sender.send(Message::RotateEndpoint).await;
     }
 
     /// Returns a future that resolves when the endpoint is rotated.
