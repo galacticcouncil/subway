@@ -212,6 +212,19 @@ pub async fn validate(config: &Config) -> Result<(), anyhow::Error> {
     config.validate(&())?;
 
     if let Some(rate_limit) = config.extensions.rate_limit.as_ref() {
+        // a weight of 0 means `NonZeroU32::new(weight)` returns `None` at call time,
+        // which silently skips the rate limiter entirely for that method.
+        if rate_limit.ip.is_some() || rate_limit.connection.is_some() {
+            for method in &config.rpcs.methods {
+                if method.rate_limit_weight == 0 {
+                    bail!(
+                        "`{}` rate_limit_weight must not be 0, doing so disables rate limiting for this method entirely",
+                        method.method,
+                    );
+                }
+            }
+        }
+
         if let Some(ref rule) = rate_limit.ip {
             for method in &config.rpcs.methods {
                 if method.rate_limit_weight > rule.burst {
@@ -231,6 +244,25 @@ pub async fn validate(config: &Config) -> Result<(), anyhow::Error> {
                         "`{}` rate_limit_weight is too big for connection: {}",
                         method.method,
                         method.rate_limit_weight,
+                    );
+                }
+            }
+        }
+    }
+
+    // `cache` must run after any middleware that resolves ambiguous block tags
+    // (`inject_params`, `block_tag`). Otherwise the cache key is computed from the
+    // unresolved request (e.g. a "latest" tag) before those middlewares turn it into
+    // a concrete block, so every caller after the first gets served the same
+    // permanently stale response until the entry expires.
+    let method_middlewares = &config.middlewares.methods;
+    if let Some(cache_idx) = method_middlewares.iter().position(|m| m == "cache") {
+        for resolver in ["inject_params", "block_tag"] {
+            if let Some(resolver_idx) = method_middlewares.iter().position(|m| m == resolver) {
+                if cache_idx < resolver_idx {
+                    bail!(
+                        "`cache` middleware must be listed after `{resolver}` in `middlewares.methods`, \
+                         otherwise responses get cached under unresolved block tags and become permanently stale",
                     );
                 }
             }
