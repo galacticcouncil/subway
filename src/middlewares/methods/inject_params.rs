@@ -74,12 +74,14 @@ impl InjectParamsMiddleware {
         }
     }
 
-    async fn get_parameter(&self) -> JsonValue {
-        let res = self.head.read().await;
-        match self.inject {
+    /// Returns `None` if the current chain head is unavailable (e.g. the upstream
+    /// connection is down), meaning there is nothing safe to inject.
+    async fn get_parameter(&self) -> Option<JsonValue> {
+        let res = self.head.read().await?;
+        Some(match self.inject {
             InjectType::BlockHashAt(_) => res.0,
             InjectType::BlockNumberAt(_) => res.1.into(),
-        }
+        })
     }
 
     pub fn params_count(&self) -> (usize, usize) {
@@ -108,9 +110,9 @@ impl Middleware<CallRequest, CallResult> for InjectParamsMiddleware {
             for (idx, param) in self.params.iter().enumerate() {
                 if param.ty == "BlockNumber" {
                     if let Some(number) = request.params.get(idx).and_then(|x| x.as_u64()) {
-                        let (_, finalized) = self.finalized.read().await;
-                        // avoid cache unfinalized data
-                        if number > finalized {
+                        let finalized = self.finalized.read().await.map(|(_, number)| number);
+                        // avoid caching data we can't confirm is finalized
+                        if finalized.map_or(true, |finalized| number > finalized) {
                             context.insert(BypassCache(true));
                         }
                     }
@@ -157,9 +159,13 @@ impl Middleware<CallRequest, CallResult> for InjectParamsMiddleware {
         // Here we are sure we have full params in the request, but it still might be set to null
         async move {
             if request.params[idx].is_null() {
-                let to_inject = self.get_parameter().await;
-                tracing::trace!("Injected param {} to method {}", &to_inject, request.method);
-                request.params[idx] = to_inject;
+                match self.get_parameter().await {
+                    Some(to_inject) => {
+                        tracing::trace!("Injected param {} to method {}", &to_inject, request.method);
+                        request.params[idx] = to_inject;
+                    }
+                    None => return Err(errors::failed("Unable to determine current chain head, try again later")),
+                }
             }
             handle_request(request).await
         }

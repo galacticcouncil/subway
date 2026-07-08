@@ -60,8 +60,12 @@ impl BlockTagMiddleware {
                     "latest" => {
                         // bypass cache for latest block to avoid caching forks
                         context.insert(BypassCache(true));
-                        let (_, number) = self.api.get_head().read().await;
-                        Some(format!("0x{:x}", number).into())
+                        match self.api.get_head().read().await {
+                            Some((_, number)) => Some(format!("0x{:x}", number).into()),
+                            // current head is unavailable (e.g. upstream doesn't support the
+                            // subscription this is derived from); let upstream resolve "latest" itself
+                            None => None,
+                        }
                     }
                     "earliest" => None, // no need to replace earliest because it's always going to be genesis
                     "pending" | "safe" => {
