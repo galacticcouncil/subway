@@ -77,11 +77,14 @@ impl ClientConfig {
                 tokio::spawn(async move {
                     match check_endpoint_connection(&endpoint).await {
                         Ok(_) => {
-                            tracing::info!("Connected to endpoint: {endpoint}");
+                            tracing::info!("Connected to endpoint: {}", redact_endpoint(&endpoint));
                             true
                         }
                         Err(err) => {
-                            tracing::error!("Failed to connect to endpoint: {endpoint}, error: {err:?}",);
+                            tracing::error!(
+                                "Failed to connect to endpoint: {}, error: {err:?}",
+                                redact_endpoint(&endpoint)
+                            );
                             false
                         }
                     }
@@ -109,6 +112,23 @@ async fn check_endpoint_connection(endpoint: &str) -> Result<(), anyhow::Error> 
 
 pub fn bool_true() -> bool {
     true
+}
+
+/// Endpoint URLs commonly embed credentials (API keys/tokens as path segments or query
+/// params, e.g. `https://mainnet.infura.io/v3/<key>`), so only the scheme/host/port are
+/// safe to log by default.
+fn redact_endpoint(url: &str) -> String {
+    match url.parse::<jsonrpsee::client_transport::ws::Uri>() {
+        Ok(uri) => {
+            let scheme = uri.scheme_str().unwrap_or("");
+            let host = uri.host().unwrap_or("<unknown host>");
+            match uri.port_u16() {
+                Some(port) => format!("{scheme}://{host}:{port}"),
+                None => format!("{scheme}://{host}"),
+            }
+        }
+        Err(_) => "<invalid endpoint>".to_string(),
+    }
 }
 
 #[derive(Debug)]
@@ -179,7 +199,7 @@ impl Client {
                     let current_endpoint = current_endpoint.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     let url = &endpoints[current_endpoint % endpoints.len()];
 
-                    tracing::info!("Connecting to endpoint: {}", url);
+                    tracing::info!("Connecting to endpoint: {}", redact_endpoint(url));
 
                     // TODO: make those configurable
                     WsClientBuilder::default()
@@ -201,7 +221,7 @@ impl Client {
                             break ws;
                         }
                         Err((e, url)) => {
-                            tracing::warn!("Unable to connect to endpoint: '{url}' error: {e}");
+                            tracing::warn!("Unable to connect to endpoint: '{}' error: {e}", redact_endpoint(&url));
                             tokio::time::sleep(get_backoff_time(&connect_backoff_counter2)).await;
                         }
                     }
@@ -502,6 +522,19 @@ fn get_backoff_time(counter: &Arc<AtomicU32>) -> Duration {
     let backoff_time = backoff_count * backoff_count * step;
 
     Duration::from_millis(backoff_time + min_time)
+}
+
+#[test]
+fn test_redact_endpoint() {
+    assert_eq!(
+        redact_endpoint("https://mainnet.infura.io/v3/super-secret-api-key"),
+        "https://mainnet.infura.io"
+    );
+    assert_eq!(
+        redact_endpoint("wss://user:pass@rpc.example.com:443/?apikey=secret"),
+        "wss://rpc.example.com:443"
+    );
+    assert_eq!(redact_endpoint("not a url"), "<invalid endpoint>");
 }
 
 #[test]
