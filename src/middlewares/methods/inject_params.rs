@@ -164,7 +164,11 @@ impl Middleware<CallRequest, CallResult> for InjectParamsMiddleware {
                         tracing::trace!("Injected param {} to method {}", &to_inject, request.method);
                         request.params[idx] = to_inject;
                     }
-                    None => return Err(errors::failed("Unable to determine current chain head, try again later")),
+                    None => {
+                        return Err(errors::failed(
+                            "Unable to determine current chain head, try again later",
+                        ))
+                    }
                 }
             }
             handle_request(request).await
