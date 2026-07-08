@@ -2,6 +2,7 @@ methods:
   - method: author_submitExtrinsic
     cache:
       size: 0
+    track_submissions: true
     params:
       - name: extrinsic
         ty: Bytes
@@ -247,6 +248,7 @@ methods:
   - method: eth_sendRawTransaction
     cache:
       size: 0
+    track_submissions: true
     params:
       - name: transaction
         ty: Bytes

@@ -37,6 +37,7 @@ middlewares:
     - response
     - inject_params
     - cache
+    - submission_tracker
     - upstream
   subscriptions:
     - merge_subscription

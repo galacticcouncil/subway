@@ -22,6 +22,7 @@ middlewares:
     - response
     - block_tag
     - cache
+    - submission_tracker
     - upstream
   subscriptions:
     - upstream

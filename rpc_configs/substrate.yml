@@ -2,6 +2,7 @@ methods:
   - method: author_submitExtrinsic
     cache:
       size: 0
+    track_submissions: true
     params:
       - name: extrinsic
         ty: Bytes

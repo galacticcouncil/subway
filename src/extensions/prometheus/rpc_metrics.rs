@@ -38,6 +38,18 @@ impl RpcMetrics {
         }
     }
 
+    pub fn submission_accepted(&self, method: &str) {
+        if let Self::Prometheus(inner) = self {
+            inner.submission_accepted(method);
+        }
+    }
+
+    pub fn submission_rejected(&self, method: &str, error_code: i32) {
+        if let Self::Prometheus(inner) = self {
+            inner.submission_rejected(method, error_code);
+        }
+    }
+
     pub fn call_metrics(&self) -> Option<(HistogramVec, CounterVec<U64>, CounterVec<U64>)> {
         if let Self::Prometheus(inner) = self {
             return Some((
@@ -60,6 +72,7 @@ pub struct InnerMetrics {
     call_times: HistogramVec,
     calls_started: CounterVec<U64>,
     calls_finished: CounterVec<U64>,
+    submission_results: CounterVec<U64>,
 }
 
 impl InnerMetrics {
@@ -77,6 +90,12 @@ impl InnerMetrics {
             &["protocol", "method", "is_error"],
         )
         .unwrap();
+        // outcome is either "accepted" or the upstream's numeric json-rpc error code
+        // (e.g. "1013" for Already Imported, "1012" for Temporarily Banned) -- a
+        // small bounded set, never the free-text error message, which carries
+        // unbounded dynamic content (e.g. priority values) unsafe as a label.
+        let submission_results_counter =
+            CounterVec::new(Opts::new("submission_results", "No help"), &["method", "outcome"]).unwrap();
 
         let open_session_count = register(open_counter, registry).unwrap();
         let closed_session_count = register(closed_counter, registry).unwrap();
@@ -86,6 +105,7 @@ impl InnerMetrics {
         let call_times = register(call_times, registry).unwrap();
         let calls_started = register(calls_started_counter, registry).unwrap();
         let calls_finished = register(calls_finished_counter, registry).unwrap();
+        let submission_results = register(submission_results_counter, registry).unwrap();
 
         Self {
             cache_miss_counter,
@@ -95,6 +115,7 @@ impl InnerMetrics {
             calls_started,
             calls_finished,
             call_times,
+            submission_results,
         }
     }
     fn ws_open(&self) {
@@ -111,5 +132,15 @@ impl InnerMetrics {
 
     fn cache_miss(&self, method: &str) {
         self.cache_miss_counter.with_label_values(&[method]).inc();
+    }
+
+    fn submission_accepted(&self, method: &str) {
+        self.submission_results.with_label_values(&[method, "accepted"]).inc();
+    }
+
+    fn submission_rejected(&self, method: &str, error_code: i32) {
+        self.submission_results
+            .with_label_values(&[method, &error_code.to_string()])
+            .inc();
     }
 }
