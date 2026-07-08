@@ -51,6 +51,11 @@ pub enum CacheValue {
 #[derive(Clone)]
 pub struct Cache<D: Digest> {
     cache: moka::future::Cache<CacheKey<D>, CacheValue>,
+    // Serializes the "check empty, then claim it as pending" step in `get_or_insert_with`
+    // so concurrent first-time requests for the same cold key can't all become fetch
+    // "leaders" at once. Only ever held across a couple of fast in-memory moka
+    // operations, never across the actual upstream fetch.
+    claim_lock: std::sync::Arc<tokio::sync::Mutex<()>>,
 }
 
 impl<D: Digest + 'static> Cache<D> {
@@ -66,7 +71,10 @@ impl<D: Digest + 'static> Cache<D> {
 
         let cache = builder.build();
 
-        Self { cache }
+        Self {
+            cache,
+            claim_lock: Default::default(),
+        }
     }
 
     pub async fn get(&self, key: &CacheKey<D>) -> Option<JsonValue> {
@@ -115,31 +123,46 @@ impl<D: Digest + 'static> Cache<D> {
             value
         };
 
+        // Returns `Some` with the resolved value once the pending fetch we're watching
+        // completes, or `None` if it got canceled without ever resolving (the caller
+        // should then try to become the new leader and fetch again).
+        async fn wait_for_pending(rx: &mut watch::Receiver<Option<CallResult>>) -> Option<CallResult> {
+            {
+                // limit the scope of value
+                let value = rx.borrow();
+                if value.is_some() {
+                    return value.clone();
+                }
+            }
+
+            let _ = rx.changed().await;
+
+            let value = rx.borrow();
+            value.clone()
+        }
+
+        match self.cache.get(&key).await {
+            Some(CacheValue::Value(value)) => return Ok(value),
+            Some(CacheValue::Pending(mut rx)) => {
+                if let Some(value) = wait_for_pending(&mut rx).await {
+                    return value;
+                }
+                // initial fetch got canceled; fall through to (re-)claim it below
+            }
+            None => {}
+        }
+
+        // Serialize check-then-claim: without this, two concurrent first-time requests
+        // for the same cold key would both see no entry and both call `fetch()`,
+        // duplicating the upstream call this method exists to deduplicate.
+        let _guard = self.claim_lock.lock().await;
+
         match self.cache.get(&key).await {
             Some(CacheValue::Value(value)) => Ok(value),
-            Some(CacheValue::Pending(mut rx)) => {
-                {
-                    // limit the scope of value
-                    let value = rx.borrow();
-                    if value.is_some() {
-                        return value.clone().unwrap();
-                    }
-                }
-
-                let _ = rx.changed().await;
-
-                {
-                    // limit the scope of value
-                    let value = rx.borrow();
-                    if let Some(value) = &*value {
-                        return value.clone();
-                    }
-                }
-
-                // this only happens when initial fetch request got canceled for some reason
-                // in that case we need to fetch again
-                fetch().await
-            }
+            Some(CacheValue::Pending(mut rx)) => match wait_for_pending(&mut rx).await {
+                Some(value) => value,
+                None => fetch().await,
+            },
             None => fetch().await,
         }
     }
@@ -268,6 +291,58 @@ mod tests {
         h2.await.unwrap(); // second request should still work
 
         assert_eq!(cache.get(&key).await, Some(json!("value")));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+    async fn get_or_insert_with_dedupes_concurrent_cold_requests() {
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        };
+
+        let cache = Cache::<blake2::Blake2b512>::new(NonZeroUsize::new(10).unwrap(), None);
+        let key = CacheKey::<blake2::Blake2b512>::new(&"key".to_string(), &[]);
+
+        let fetch_count = Arc::new(AtomicUsize::new(0));
+        let concurrency = 20;
+        let barrier = Arc::new(tokio::sync::Barrier::new(concurrency));
+
+        let tasks = (0..concurrency)
+            .map(|_| {
+                let cache = cache.clone();
+                let key = key.clone();
+                let fetch_count = fetch_count.clone();
+                let barrier = barrier.clone();
+                tokio::spawn(async move {
+                    // synchronize all tasks so they enter `get_or_insert_with` for the
+                    // same cold key at the same time, instead of relying on scheduling luck
+                    barrier.wait().await;
+                    cache
+                        .get_or_insert_with(key, move || {
+                            let fetch_count = fetch_count.clone();
+                            async move {
+                                fetch_count.fetch_add(1, Ordering::SeqCst);
+                                // give every other task a chance to (incorrectly) also
+                                // become a fetch "leader" before this one finishes
+                                tokio::time::sleep(Duration::from_millis(20)).await;
+                                Ok(json!("value"))
+                            }
+                            .boxed()
+                        })
+                        .await
+                })
+            })
+            .collect::<Vec<_>>();
+
+        for task in tasks {
+            assert_eq!(task.await.unwrap(), Ok(json!("value")));
+        }
+
+        assert_eq!(
+            fetch_count.load(Ordering::SeqCst),
+            1,
+            "expected only one upstream fetch for concurrent cold requests"
+        );
     }
 
     #[tokio::test]
