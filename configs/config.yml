@@ -23,17 +23,18 @@ extensions:
       - path: /liveness
         method: chain_getBlockHash
     cors: all
-  rate_limit:
-    connection:
-      burst: ${RATE_LIMIT_CONNECTION_BURST:-400}
-      period_secs: ${RATE_LIMIT_CONNECTION_PERIOD_SECS:-1}
-    ip:
-      burst: ${RATE_LIMIT_IP_BURST:-2000}
-      period_secs: ${RATE_LIMIT_IP_PERIOD_SECS:-10}
-    # use X-Forwarded-For header to get real ip, if available (e.g. behind a load balancer).
-    # WARNING: Use with caution, as this xff header can be forged.
-    use_xff: true # default is false
-    xff_header: ${XFF_HEADER:-x-forwarded-for}
+  # rate_limit is disabled by default. Uncomment and adjust to enable it.
+  # rate_limit:
+  #   connection:
+  #     burst: ${RATE_LIMIT_CONNECTION_BURST:-400}
+  #     period_secs: ${RATE_LIMIT_CONNECTION_PERIOD_SECS:-1}
+  #   ip:
+  #     burst: ${RATE_LIMIT_IP_BURST:-2000}
+  #     period_secs: ${RATE_LIMIT_IP_PERIOD_SECS:-10}
+  #   # use X-Forwarded-For header to get real ip, if available (e.g. behind a load balancer).
+  #   # WARNING: Use with caution, as this xff header can be forged.
+  #   use_xff: true # default is false
+  #   xff_header: ${XFF_HEADER:-x-forwarded-for}
   prometheus:
     port: 9616
     listen_address: "0.0.0.0"
