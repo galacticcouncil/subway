@@ -54,17 +54,25 @@ impl Validator {
                     .await;
 
                 if response != expected {
-                    let request = serde_json::to_string_pretty(&request).unwrap_or_default();
-                    let actual = match &response {
-                        Ok(value) => serde_json::to_string_pretty(&value).unwrap_or_default(),
-                        Err(e) => e.to_string()
-                    };
-                    let expected = match &expected {
-                        Ok(value) => serde_json::to_string_pretty(&value).unwrap_or_default(),
-                        Err(e) => e.to_string()
-                    };
                     let endpoint_url = client.endpoints()[0].clone();
-                    tracing::error!("Response mismatch for request:\n{request}\nSubway response:\n{actual}\nEndpoint {endpoint_url} response:\n{expected}");
+                    // Method name only at the default log level: request params and
+                    // responses may contain sensitive data (e.g. signed transactions for
+                    // submission methods) and endpoint URLs commonly embed API keys, so
+                    // none of that should be logged unconditionally.
+                    tracing::warn!("Response mismatch for method `{}` against {endpoint_url}", request.method);
+
+                    if tracing::enabled!(tracing::Level::DEBUG) {
+                        let request = serde_json::to_string_pretty(&request).unwrap_or_default();
+                        let actual = match &response {
+                            Ok(value) => serde_json::to_string_pretty(&value).unwrap_or_default(),
+                            Err(e) => e.to_string(),
+                        };
+                        let expected = match &expected {
+                            Ok(value) => serde_json::to_string_pretty(&value).unwrap_or_default(),
+                            Err(e) => e.to_string(),
+                        };
+                        tracing::debug!("Response mismatch for request:\n{request}\nSubway response:\n{actual}\nEndpoint {endpoint_url} response:\n{expected}");
+                    }
                 }
             })).await;
         });

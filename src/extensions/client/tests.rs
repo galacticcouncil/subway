@@ -1,4 +1,8 @@
-use std::{str::FromStr, time::Duration};
+use std::{
+    str::FromStr,
+    sync::atomic::{AtomicBool, Ordering},
+    time::Duration,
+};
 
 use super::mock::*;
 use super::*;
@@ -215,4 +219,57 @@ async fn retry_requests_out_of_retries() {
 
     handle1.stop().unwrap();
     handle2.stop().unwrap();
+}
+
+// Orphaned retry tasks (spawned internally on a timed-out request/subscribe) used to
+// `.expect()` on sending the retry message back to the background task, which panics if
+// the `Client` (and its background task) has since been dropped -- e.g. because the
+// caller's own task was aborted by the per-request timeout. This drives exactly that
+// race and asserts nothing panics.
+#[tokio::test]
+async fn orphaned_retry_task_does_not_panic_when_client_dropped() {
+    static PANICKED: AtomicBool = AtomicBool::new(false);
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        PANICKED.store(true, Ordering::SeqCst);
+        default_hook(info);
+    }));
+
+    let (addr, handle, mut rx, _) = dummy_server().await;
+
+    let client = std::sync::Arc::new(
+        Client::new([format!("ws://{addr}")], Some(Duration::from_millis(20)), None, Some(2)).unwrap(),
+    );
+
+    // never respond -> first attempt times out -> retry task enters its backoff sleep
+    let h1 = tokio::spawn(async move {
+        let _req = rx.recv().await.unwrap();
+        tokio::time::sleep(Duration::from_secs(5)).await;
+    });
+
+    // issue the request and keep its response channel open (unlike a real caller, we
+    // deliberately never abort this task) -- the bug only manifests when the background
+    // task dies while some *other* in-flight request's response channel is still open,
+    // e.g. because the whole extension registry is torn down mid-request at shutdown.
+    let client_for_request = client.clone();
+    let req_task = tokio::spawn(async move {
+        let _ = client_for_request.request("mock_rpc", vec![]).await;
+    });
+
+    // give the first attempt time to time out and the retry task to start its backoff sleep
+    tokio::time::sleep(Duration::from_millis(60)).await;
+
+    // directly kill the background task, exactly what `Client::drop` does, without
+    // touching `req_task`'s still-open response channel at all
+    client.background_task.abort();
+
+    // let the orphaned retry task wake up from backoff and try (and fail) to send on the
+    // now-closed channel
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    assert!(!PANICKED.load(Ordering::SeqCst), "orphaned retry task panicked");
+
+    handle.stop().unwrap();
+    h1.abort();
+    req_task.abort();
 }

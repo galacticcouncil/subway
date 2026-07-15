@@ -228,21 +228,23 @@ impl SubwayServerBuilder {
                     let call_metrics = rpc_metrics.call_metrics();
 
                     async move {
-                        let rpc_middleware =
-                            RpcServiceBuilder::new()
-                                .option_layer(
-                                    rate_limit_builder
-                                        .as_ref()
-                                        .and_then(|r| r.ip_limit(socket_ip, rpc_method_weights.clone())),
-                                )
-                                .option_layer(
-                                    rate_limit_builder
-                                        .as_ref()
-                                        .and_then(|r| r.connection_limit(rpc_method_weights.clone())),
-                                )
-                                .option_layer(call_metrics.as_ref().map(move |(a, b, c)| {
-                                    layer_fn(move |s| PrometheusService::new(s, protocol, a, b, c))
-                                }));
+                        let rpc_middleware = RpcServiceBuilder::new()
+                            .option_layer(
+                                rate_limit_builder
+                                    .as_ref()
+                                    .and_then(|r| r.ip_limit(socket_ip, rpc_method_weights.clone())),
+                            )
+                            .option_layer(
+                                rate_limit_builder
+                                    .as_ref()
+                                    .and_then(|r| r.connection_limit(rpc_method_weights.clone())),
+                            )
+                            .option_layer(call_metrics.as_ref().map(move |(a, b, c)| {
+                                let rpc_method_weights = rpc_method_weights.clone();
+                                layer_fn(move |s| {
+                                    PrometheusService::new(s, protocol, a, b, c, rpc_method_weights.clone())
+                                })
+                            }));
 
                         let mut service = svc_builder
                             .set_rpc_middleware(rpc_middleware)

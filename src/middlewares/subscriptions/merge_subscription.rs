@@ -9,7 +9,7 @@ use blake2::Blake2b512;
 use jsonrpsee::{core::JsonValue, SubscriptionMessage};
 use opentelemetry::trace::FutureExt;
 use serde::{Deserialize, Serialize};
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{broadcast, Mutex, RwLock};
 
 use crate::{
     config::MergeStrategy,
@@ -67,6 +67,11 @@ pub struct MergeSubscriptionMiddleware {
     keep_alive_seconds: u64,
     upstream_subs: Arc<RwLock<HashMap<CacheKey<Blake2b512>, UpstreamSubscription>>>,
     current_values: Arc<RwLock<HashMap<CacheKey<Blake2b512>, JsonValue>>>,
+    // Serializes "check absent, then create+register" so concurrent subscribers for a
+    // not-yet-existing key don't each independently create their own duplicate upstream
+    // subscription (only the fast, in-memory recheck is repeated under this lock; the
+    // slow part -- the actual `client.subscribe` round-trip -- still only runs once).
+    create_lock: Arc<Mutex<()>>,
 }
 
 impl MergeSubscriptionMiddleware {
@@ -77,7 +82,22 @@ impl MergeSubscriptionMiddleware {
             keep_alive_seconds: keep_alive_seconds.unwrap_or(60), // 60s
             upstream_subs: Arc::new(RwLock::new(HashMap::new())),
             current_values: Arc::new(RwLock::new(HashMap::new())),
+            create_lock: Arc::new(Mutex::new(())),
         }
+    }
+
+    /// Looks up an existing upstream subscription for `key` and, if found, subscribes to
+    /// it immediately while still holding the map's read lock. This must happen under the
+    /// lock (rather than returning the sender for the caller to subscribe to later) so it
+    /// can't race with the forwarder task's own atomic receiver-count check when deciding
+    /// whether to retire an idle subscription -- see the `interval.tick()`/`subscription.next()`
+    /// arms below.
+    async fn find_existing_subscription(
+        &self,
+        key: &CacheKey<Blake2b512>,
+    ) -> Option<broadcast::Receiver<SubscriptionMessage>> {
+        let subs = self.upstream_subs.read().await;
+        subs.get(key).map(|tx| tx.subscribe())
     }
 
     async fn get_upstream_subscription(
@@ -90,9 +110,23 @@ impl MergeSubscriptionMiddleware {
         Box<dyn FnOnce() -> broadcast::Receiver<SubscriptionMessage> + Sync + Send + 'static>,
         jsonrpsee::core::client::Error,
     > {
-        if let Some(tx) = self.upstream_subs.read().await.get(&key).cloned() {
+        if let Some(rx) = self.find_existing_subscription(&key).await {
             tracing::trace!("Found existing upstream subscription for {}", &subscribe);
-            return Ok(Box::new(move || tx.subscribe()));
+            return Ok(Box::new(move || rx));
+        }
+
+        // Serialize check-then-create: without this, two concurrent subscribers landing
+        // here for the same not-yet-existing key would each create their own upstream
+        // subscription, and whichever inserts into `upstream_subs` last would silently
+        // orphan the other's forwarder task from the map.
+        let _guard = self.create_lock.lock().await;
+
+        if let Some(rx) = self.find_existing_subscription(&key).await {
+            tracing::trace!(
+                "Found existing upstream subscription for {} (created concurrently)",
+                &subscribe
+            );
+            return Ok(Box::new(move || rx));
         }
 
         tracing::trace!("Create new upstream subscription for {}", &subscribe);
@@ -118,11 +152,37 @@ impl MergeSubscriptionMiddleware {
                 interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
                 interval.reset();
 
+                // Atomically checks whether there are still no receivers and, if so,
+                // retires this subscription by removing it from the map. Must hold the
+                // write lock across the check-and-remove so a new subscriber's
+                // `find_existing_subscription` (which subscribes while holding the read
+                // lock) can't race with this decision: either they see this entry and
+                // subscribe before we retire it (receiver_count is then > 0, so we don't
+                // retire), or we retire first and they see no entry and create a fresh
+                // subscription instead. Without this, a new subscriber could be handed a
+                // receiver for a `tx` we're about to drop, and would then hang forever
+                // with no error since they still hold their own sender clone.
+                let try_retire = || {
+                    let upstream_subs = upstream_subs.clone();
+                    let tx = tx.clone();
+                    let key = key.clone();
+                    async move {
+                        let mut subs = upstream_subs.write().await;
+                        if tx.receiver_count() == 0 {
+                            subs.remove(&key);
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                };
+
                 loop {
                     tokio::select! {
                         resp = subscription.next() => {
-                            // break if no receiver
-                            if tx.receiver_count() == 0 { break; }
+                            if tx.receiver_count() == 0 && try_retire().await {
+                                break;
+                            }
 
                             interval.reset();
 
@@ -150,8 +210,9 @@ impl MergeSubscriptionMiddleware {
                             }
                         }
                         _ = interval.tick() => {
-                            // break if no receiver
-                            if tx.receiver_count() == 0 { break; }
+                            if tx.receiver_count() == 0 && try_retire().await {
+                                break;
+                            }
                         }
                     }
                 }

@@ -279,6 +279,7 @@ mod tests {
                         cache: None,
                         response: None,
                         delay_ms: None,
+                        track_submissions: false,
                         rate_limit_weight: 1,
                     },
                     RpcMethod {
@@ -287,6 +288,7 @@ mod tests {
                         cache: None,
                         response: None,
                         delay_ms: None,
+                        track_submissions: false,
                         rate_limit_weight: 1,
                     },
                     RpcMethod {
@@ -295,6 +297,7 @@ mod tests {
                         cache: None,
                         response: None,
                         delay_ms: None,
+                        track_submissions: false,
                         rate_limit_weight: 1,
                     },
                 ],

@@ -9,6 +9,10 @@ impl MethodWeights {
     pub fn get(&self, method: &str) -> u32 {
         self.0.get(method).cloned().unwrap_or(1)
     }
+
+    pub fn contains(&self, method: &str) -> bool {
+        self.0.contains_key(method)
+    }
 }
 
 impl MethodWeights {

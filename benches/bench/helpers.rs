@@ -130,8 +130,47 @@ fn gen_rpc_module() -> jsonrpsee::RpcModule<()> {
         })
         .unwrap();
 
+    // A handful of calls typical of a Substrate DeFi frontend's page load: current
+    // header, a storage read (e.g. an asset balance or pool reserve), node health and
+    // runtime version. Used by the `hydradx_mix` benchmark.
+    module
+        .register_async_method(HYDRADX_CHAIN_GET_HEADER, |_, _, _| async move {
+            Result::<_, ErrorObjectOwned>::Ok(serde_json::json!({
+                "number": "0x4321",
+                "parentHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            }))
+        })
+        .unwrap();
+    module
+        .register_async_method(HYDRADX_STATE_GET_STORAGE, |_, _, _| async move {
+            Result::<_, ErrorObjectOwned>::Ok("0x0000000000000000")
+        })
+        .unwrap();
+    module
+        .register_method(HYDRADX_SYSTEM_HEALTH, |_, _, _| {
+            Ok::<_, ErrorObjectOwned>(serde_json::json!({ "peers": 10, "isSyncing": false, "shouldHavePeers": true }))
+        })
+        .unwrap();
+    module
+        .register_method(HYDRADX_STATE_GET_RUNTIME_VERSION, |_, _, _| {
+            Ok::<_, ErrorObjectOwned>(serde_json::json!({ "specVersion": 100, "transactionVersion": 1 }))
+        })
+        .unwrap();
+
     module
 }
+
+pub const HYDRADX_CHAIN_GET_HEADER: &str = "chain_getHeader";
+pub const HYDRADX_STATE_GET_STORAGE: &str = "state_getStorage";
+pub const HYDRADX_SYSTEM_HEALTH: &str = "system_health";
+pub const HYDRADX_STATE_GET_RUNTIME_VERSION: &str = "state_getRuntimeVersion";
+
+pub const HYDRADX_METHODS: [&str; 4] = [
+    HYDRADX_CHAIN_GET_HEADER,
+    HYDRADX_STATE_GET_STORAGE,
+    HYDRADX_SYSTEM_HEALTH,
+    HYDRADX_STATE_GET_RUNTIME_VERSION,
+];
 
 pub mod client {
     use jsonrpsee::client_transport::ws::{Url, WsTransportClientBuilder};

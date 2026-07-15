@@ -39,6 +39,13 @@ pub struct RpcMethod {
     #[serde(default)]
     pub delay_ms: Option<u64>,
 
+    /// If true, the submission_tracker middleware records whether this method's
+    /// upstream response was an error (and its code) as a prometheus counter --
+    /// meant for submission methods (author_submitExtrinsic, eth_sendRawTransaction)
+    /// where the rejection reason itself is the useful signal, not the payload.
+    #[serde(default)]
+    pub track_submissions: bool,
+
     /// This should not exceed max cell capacity. If it does,
     /// method will return error. Burst size is the max cell capacity.
     /// If rate limit is not configured, this will be ignored.

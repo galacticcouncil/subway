@@ -6,6 +6,7 @@ use pprof::criterion::{Output, PProfProfiler};
 use std::{sync::Arc, time::Duration};
 use tokio::runtime::Runtime as TokioRuntime;
 
+mod hydradx_mix;
 mod rate_limit;
 
 use helpers::{
@@ -83,6 +84,7 @@ criterion_main!(
     subscriptions,
     async_benches_inject,
     rate_limit::rate_limit_benches,
+    hydradx_mix::hydradx_mix_benches,
 );
 
 const SERVER_ONE_ENDPOINT: &str = "127.0.0.1:9955";
@@ -245,6 +247,7 @@ fn config() -> Config {
                     response: None,
                     cache: None,
                     delay_ms: None,
+                    track_submissions: false,
                     rate_limit_weight: 1,
                 },
                 RpcMethod {
@@ -253,6 +256,7 @@ fn config() -> Config {
                     response: None,
                     cache: None,
                     delay_ms: None,
+                    track_submissions: false,
                     rate_limit_weight: 1,
                 },
                 RpcMethod {
@@ -261,6 +265,7 @@ fn config() -> Config {
                     response: None,
                     cache: None,
                     delay_ms: None,
+                    track_submissions: false,
                     rate_limit_weight: 1,
                 },
                 RpcMethod {
@@ -269,6 +274,7 @@ fn config() -> Config {
                     response: None,
                     cache: None,
                     delay_ms: None,
+                    track_submissions: false,
                     rate_limit_weight: 1,
                 },
                 RpcMethod {
@@ -277,6 +283,7 @@ fn config() -> Config {
                     response: None,
                     cache: None,
                     delay_ms: None,
+                    track_submissions: false,
                     rate_limit_weight: 1,
                 },
                 RpcMethod {
@@ -285,6 +292,7 @@ fn config() -> Config {
                     response: None,
                     cache: None,
                     delay_ms: None,
+                    track_submissions: false,
                     rate_limit_weight: 1,
                 },
                 RpcMethod {
@@ -306,6 +314,7 @@ fn config() -> Config {
                     response: None,
                     cache: None,
                     delay_ms: None,
+                    track_submissions: false,
                     rate_limit_weight: 1,
                 },
             ],

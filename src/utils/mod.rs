@@ -33,7 +33,39 @@ pub mod errors {
         use jsonrpsee::core::client::Error::*;
         match err {
             Call(e) => e,
+            // These can carry arbitrary underlying details (DNS/TLS/connection failures,
+            // or a fragment of a malformed upstream response body) that could reveal
+            // internal network topology to the client. Log the details, return a generic
+            // message. Other variants (e.g. `RequestTimeout`) have fixed, safe messages
+            // and pass through as before.
+            err @ (Transport(_) | RestartNeeded(_) | ParseError(_)) => {
+                tracing::debug!("Upstream request failed: {err:?}");
+                internal_error("Upstream request failed")
+            }
             x => internal_error(x),
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use jsonrpsee::core::client::Error as ClientError;
+
+        #[test]
+        fn map_error_redacts_transport_details() {
+            let err = map_error(ClientError::Transport(anyhow::anyhow!(
+                "connect to 10.0.0.42:9944 failed: connection refused"
+            )));
+            assert_eq!(err.message(), INTERNAL_ERROR_MSG);
+            let data = err.data().unwrap().to_string();
+            assert!(!data.contains("10.0.0.42"), "leaked internal address: {data}");
+            assert_eq!(data, "\"Upstream request failed\"");
+        }
+
+        #[test]
+        fn map_error_preserves_safe_messages() {
+            let err = map_error(ClientError::RequestTimeout);
+            assert_eq!(err.data().unwrap().to_string(), "\"Request timeout\"");
         }
     }
 }

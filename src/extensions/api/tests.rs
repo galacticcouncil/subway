@@ -89,9 +89,9 @@ async fn get_head_finalized_head() {
     // access value before subscription is established
 
     let h1 = tokio::spawn(async move {
-        assert_eq!(head.read().await, (json!("0xaa"), 0x01));
+        assert_eq!(head.read().await, Some((json!("0xaa"), 0x01)));
         // should be able to read it multiple times
-        assert_eq!(head.read().await, (json!("0xaa"), 0x01));
+        assert_eq!(head.read().await, Some((json!("0xaa"), 0x01)));
     });
 
     let head_sub = head_rx.recv().await.unwrap();
@@ -116,7 +116,7 @@ async fn get_head_finalized_head() {
 
     let h2 = tokio::spawn(async move {
         let val = finalized_head.read().await;
-        assert_eq!(val, (json!("0xaa"), 0x01));
+        assert_eq!(val, Some((json!("0xaa"), 0x01)));
     });
 
     // new head
@@ -131,13 +131,13 @@ async fn get_head_finalized_head() {
 
     let finalized_head = api.get_finalized_head();
     // still old value
-    assert_eq!(finalized_head.read().await, (json!("0xaa"), 0x01));
+    assert_eq!(finalized_head.read().await, Some((json!("0xaa"), 0x01)));
 
     // wait a bit for the value to be updated
     tokio::time::sleep(std::time::Duration::from_millis(1)).await;
 
     let head = api.get_head();
-    assert_eq!(head.read().await, (json!("0xbb"), 0x02));
+    assert_eq!(head.read().await, Some((json!("0xbb"), 0x02)));
 
     // new finalized head
     finalized_head_sub.send(json!({ "number": "0x03" })).await;
@@ -156,7 +156,7 @@ async fn get_head_finalized_head() {
     // wait a bit for the value to be updated
     tokio::time::sleep(std::time::Duration::from_millis(1)).await;
 
-    assert_eq!(finalized_head.read().await, (json!("0xdd"), 0x04));
+    assert_eq!(finalized_head.read().await, Some((json!("0xdd"), 0x04)));
 
     h1.await.unwrap();
     h2.await.unwrap();
@@ -173,7 +173,7 @@ async fn rotate_endpoint_on_stale() {
 
     let head = api.get_head();
     let h1 = tokio::spawn(async move {
-        assert_eq!(head.read().await, (json!("0xabcd"), 0x1234));
+        assert_eq!(head.read().await, Some((json!("0xabcd"), 0x1234)));
     });
 
     // initial connection
@@ -199,7 +199,7 @@ async fn rotate_endpoint_on_stale() {
     // wait a bit to process tasks
     tokio::time::sleep(std::time::Duration::from_millis(1)).await;
 
-    assert_eq!(api.get_head().read().await, (json!("0xbcde"), 0x2345));
+    assert_eq!(api.get_head().read().await, Some((json!("0xbcde"), 0x2345)));
 
     // wait for timeout
     tokio::time::sleep(std::time::Duration::from_millis(150)).await;
@@ -219,7 +219,7 @@ async fn rotate_endpoint_on_stale() {
     // wait a bit to process tasks
     tokio::time::sleep(std::time::Duration::from_millis(1)).await;
 
-    assert_eq!(api.get_head().read().await, (json!("0xdcba"), 0x4321));
+    assert_eq!(api.get_head().read().await, Some((json!("0xdcba"), 0x4321)));
 
     h1.await.unwrap();
     server.stop().unwrap();
@@ -239,8 +239,8 @@ async fn rotate_endpoint_on_head_mismatch() {
     let head = api.get_head();
     let finalized_head = api.get_finalized_head();
     let h1 = tokio::spawn(async move {
-        assert_eq!(head.read().await, (json!("0xaa"), 1));
-        assert_eq!(finalized_head.read().await, (json!("0xaa"), 1));
+        assert_eq!(head.read().await, Some((json!("0xaa"), 1)));
+        assert_eq!(finalized_head.read().await, Some((json!("0xaa"), 1)));
     });
 
     // initial connection
@@ -279,7 +279,7 @@ async fn rotate_endpoint_on_head_mismatch() {
     // wait a bit to process tasks
     tokio::time::sleep(std::time::Duration::from_millis(1)).await;
 
-    assert_eq!(api.get_finalized_head().read().await, (json!("0xbb"), 0x02));
+    assert_eq!(api.get_finalized_head().read().await, Some((json!("0xbb"), 0x02)));
 
     // stale server finalized head 1, trigger rotate endpoint
     finalized_head_sub.send(json!({ "number": "0x01" })).await;
@@ -296,7 +296,7 @@ async fn rotate_endpoint_on_head_mismatch() {
     assert!(finalized_head_sub.sink.is_closed());
 
     // current finalized head is still 2
-    assert_eq!(api.get_finalized_head().read().await, (json!("0xbb"), 0x02));
+    assert_eq!(api.get_finalized_head().read().await, Some((json!("0xbb"), 0x02)));
 
     let head_sub2 = head_rx2.recv().await.unwrap();
     head_sub2.send(json!({ "number": "0x03" })).await;
@@ -322,8 +322,8 @@ async fn rotate_endpoint_on_head_mismatch() {
     tokio::time::sleep(std::time::Duration::from_millis(1)).await;
 
     // current head=4 and finalized_head=3
-    assert_eq!(api.get_head().read().await, (json!("0xdd"), 0x04));
-    assert_eq!(api.get_finalized_head().read().await, (json!("0xcc"), 0x03));
+    assert_eq!(api.get_head().read().await, Some((json!("0xdd"), 0x04)));
+    assert_eq!(api.get_finalized_head().read().await, Some((json!("0xcc"), 0x03)));
 
     server1.stop().unwrap();
     server2.stop().unwrap();

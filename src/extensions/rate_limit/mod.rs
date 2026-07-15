@@ -51,6 +51,8 @@ fn default_xff_header() -> String {
     "x-forwarded-for".to_string()
 }
 
+const RATE_LIMIT_CLEANUP_INTERVAL: Duration = Duration::from_secs(300);
+
 pub struct RateLimitBuilder {
     config: RateLimitConfig,
     ip_jitter: Option<Jitter>,
@@ -81,12 +83,27 @@ impl RateLimitBuilder {
         if let Some(ref rule) = config.ip {
             let burst = NonZeroU32::new(rule.burst).unwrap();
             let quota = build_quota(burst, Duration::from_secs(rule.period_secs));
-            let ip_limiter = Some(Arc::new(RateLimiter::keyed(quota)));
+            let ip_limiter: Arc<DefaultKeyedRateLimiter<String>> = Arc::new(RateLimiter::keyed(quota));
             let ip_jitter = Some(Jitter::up_to(Duration::from_millis(rule.jitter_up_to_millis)));
+
+            // The keyed limiter never forgets an IP on its own, so a client that keeps
+            // rotating its (real or `X-Forwarded-For`-spoofed) source IP would otherwise
+            // grow this map forever. Periodically drop entries that are indistinguishable
+            // from a fresh bucket, i.e. IPs that haven't made a request in a while.
+            let cleanup_limiter = ip_limiter.clone();
+            tokio::spawn(async move {
+                let mut interval = tokio::time::interval(RATE_LIMIT_CLEANUP_INTERVAL);
+                loop {
+                    interval.tick().await;
+                    cleanup_limiter.retain_recent();
+                    cleanup_limiter.shrink_to_fit();
+                }
+            });
+
             Self {
                 config,
                 ip_jitter,
-                ip_limiter,
+                ip_limiter: Some(ip_limiter),
             }
         } else {
             Self {
@@ -133,4 +150,39 @@ pub fn build_quota(burst: NonZeroU32, period: Duration) -> Quota {
     Quota::with_period(Duration::from_nanos(replenish_interval_ns as u64))
         .unwrap()
         .allow_burst(burst)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Without periodic housekeeping, `DefaultKeyedRateLimiter` never forgets a key, so a
+    // client that keeps rotating its (real or `X-Forwarded-For`-spoofed) source IP grows
+    // this map forever. This proves the same `retain_recent` + `shrink_to_fit` housekeeping
+    // used by `RateLimitBuilder::new`'s cleanup task actually bounds that growth once keys
+    // go idle, rather than merely compiling.
+    #[tokio::test]
+    async fn stale_ip_entries_are_pruned() {
+        let burst = NonZeroU32::new(10).unwrap();
+        let quota = build_quota(burst, Duration::from_millis(20));
+        let limiter: DefaultKeyedRateLimiter<String> = RateLimiter::keyed(quota);
+
+        // simulate 10_000 distinct clients, e.g. spoofed XFF values, each firing once.
+        for i in 0..10_000 {
+            let _ = limiter.check_key(&format!("203.0.113.{i}"));
+        }
+        assert_eq!(limiter.len(), 10_000);
+
+        // let every bucket go idle long enough to look indistinguishable from a fresh key.
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        limiter.retain_recent();
+        limiter.shrink_to_fit();
+
+        assert_eq!(
+            limiter.len(),
+            0,
+            "idle IP entries must be pruned to bound memory growth"
+        );
+    }
 }

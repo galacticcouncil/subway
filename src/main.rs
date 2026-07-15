@@ -8,10 +8,12 @@ async fn main() -> anyhow::Result<()> {
     let validate_res = subway::config::validate(&config).await;
     if let Err(err) = &validate_res {
         tracing::error!("Config validation failed: {err:?}");
+        // refuse to boot with a known-bad config instead of only warning
+        return validate_res;
     }
     // early return if we're just validating the config
     if cli.is_validate() {
-        return validate_res;
+        return Ok(());
     }
 
     let subway_server = subway::server::build(config).await?;
